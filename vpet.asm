@@ -39,7 +39,7 @@ section .data
 	; --- TIME STRUCTURE (for nanosleep) ---
 	; struct timespec { long tv_sec; long tv_nsec; };
 	; We will sleep for 1 second per cycle.
-	sleep_req_sec dq 1			; tv_sec = 1
+	sleep_req_sec dq 1				; tv_sec = 1
 	sleep_req_nsec dq 0      		; tv_nsec = 0
 
 section .bss
@@ -96,26 +96,26 @@ print_string:
 print_num:
 	push rbp
 	mov rbp, rsp
-	push rbx                		; Save caller-saved registers
+	push rbx                			; Save caller-saved registers
 	push rcx
 	push rdx
 	push rsi
 
-	mov rsi, num_buffer     		; Use buffer as scratchpad
-	mov ecx, 0              		; Digit counter (length of the number string)
-	mov ebx, 10             		; Divisor (10)
+	mov rsi, num_buffer     			; Use buffer as scratchpad
+	mov ecx, 0              			; Digit counter (length of the number string)
+	mov ebx, 10             			; Divisor (10)
 
 .divide_loop:
 	; Use 32-bit division: IDIV uses EDX:EAX as dividend.
-	mov edx, 0              		; Clear EDX (high 32 bits of dividend)
-	div ebx                 		; EAX = quotient, EDX = remainder (the digit)
+	mov edx, 0              			; Clear EDX (high 32 bits of dividend)
+	div ebx                 			; EAX = quotient, EDX = remainder (the digit)
 
 	; Convert digit (EDX) to ASCII and store it in the buffer (reversed)
-	add dl, '0'             		; Convert remainder in DL to ASCII
-	mov [rsi+rcx], dl       		; Store ASCII digit
-	inc ecx                 		; Increment digit counter
-	cmp eax, 0              		; Check if quotient is zero
-	jnz .divide_loop        		; Loop if quotient is not zero
+	add dl, '0'             			; Convert remainder in DL to ASCII
+	mov [rsi+rcx], dl       			; Store ASCII digit
+	inc ecx                 			; Increment digit counter
+	cmp eax, 0              			; Check if quotient is zero
+	jnz .divide_loop        			; Loop if quotient is not zero
 
 ; --- Print the digits from the buffer (which are currently reversed) ---
 	; RCX holds the count (length of number string)
@@ -123,24 +123,24 @@ print_num:
 	; We need to print them in reverse order by iterating backward from the end
 	; RSI is the start of the buffer. Start printing from (RSI + RCX - 1)
 
-	mov rdx, rcx            		; RDX = total length (digit count)
-	mov rsi, num_buffer     		; RSI = starting address
-	add rsi, rdx            		; Point RSI to the byte AFTER the last digit
-	dec rsi                 		; Point RSI to the last digit (first to print)
+	mov rdx, rcx            			; RDX = total length (digit count)
+	mov rsi, num_buffer     			; RSI = starting address
+	add rsi, rdx            			; Point RSI to the byte AFTER the last digit
+	dec rsi                 			; Point RSI to the last digit (first to print)
 
 .print_loop:
 	; Print the character pointed to by RSI
 	mov rax, SYS_WRITE
 	mov rdi, STDOUT
-	mov rdx, 1              		; Length is 1 byte
-	syscall                 		; Print the single character
+	mov rdx, 1              			; Length is 1 byte
+	syscall                 			; Print the single character
 
-	dec rsi                 		; Move to the previous character
-	loop .print_loop        		; Decrement RCX and loop until RCX is 0 (this is an efficient loop instruction)
+	dec rsi                 			; Move to the previous character
+	loop .print_loop        			; Decrement RCX and loop until RCX is 0 (this is an efficient loop instruction)
 
 	; Note: LOOP instruction uses RCX implicitly.
 
-	pop rsi                 		; Restore caller-saved registers
+	pop rsi                 			; Restore caller-saved registers
 	pop rdx
 	pop rcx
 	pop rbx
@@ -153,8 +153,8 @@ print_num:
 ; Exits the program with a success status (0).
 ; ----------------------------------------------------------------------
 clean_exit:
-	mov rax, SYS_EXIT			; Syscall 60 (exit)
-	mov rdi, EXIT_SUCCESS			; Exit status 0
+	mov rax, SYS_EXIT					; Syscall 60 (exit)
+	mov rdi, EXIT_SUCCESS				; Exit status 0
 	syscall
 ; ----------------------------------------------------------------------
 
@@ -169,8 +169,8 @@ error_exit:
 	call print_string
 
 	; Exit with Error Code
-	mov rax, SYS_EXIT			; Syscall 60 (exit)
-	mov rdi, EXIT_FAILURE			; Exit status 1
+	mov rax, SYS_EXIT					; Syscall 60 (exit)
+	mov rdi, EXIT_FAILURE				; Exit status 1
 	syscall
 ; ----------------------------------------------------------------------
 
@@ -180,7 +180,7 @@ _start:
 	mov dword [pet_health], 100
 	mov dword [pet_hunger], 50
 	mov dword [pet_age], 0
-	mov dword [pet_stage], 0		; Start at Egg stage
+	mov dword [pet_stage], 0			; Start at Egg stage
 
 	; 2. Initialize PRNG Seed
 	; Use the current time-stamp counter for a non-deterministic seed
