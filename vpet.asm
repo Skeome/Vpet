@@ -875,8 +875,7 @@ _start:
 ;
 ;----------------------------------------------------------------------
 ;
-; Subroutines needed:
-;
+; For further development and brainstorming, here are some ideas and steps to consider:
 ; The first thing we need to do is make a window to display the program in.
 ; This will require using Linux syscalls to create a terminal window.
 ;
