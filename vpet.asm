@@ -82,6 +82,9 @@ section .data
     msg_event_found db "EVENT: A wild event occurred!", 0xA
     len_event_found equ $ - msg_event_found
     
+    msg_evolution db 0xA, 0x1B, "[36m--- EVOLVED! ---", 0x1B, "[0m", 0xA
+    len_evolution equ $ - msg_evolution
+    
     msg_error db 'ERROR: Program encountered a critical failure.', 0xA
 	len_error equ $ - msg_error
 
@@ -106,6 +109,10 @@ section .data
     sprite_child db 0x7E, 0x3C, 0x18, 0x7E, 0x18, 0x18, 0x42, 0x00
     len_sprite_child equ 8
 
+    ; Stage 3: ADULT (Placeholder for future definition)
+    sprite_adult db 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55
+    len_sprite_adult equ 8
+
 	; --- TIME STRUCTURE (for nanosleep) ---
 	; struct timespec { long tv_sec; long tv_nsec; };
 	; We will sleep for 1 second per cycle.
@@ -129,7 +136,7 @@ section .bss
 	pet_health resd 1   			; 0-100 (100 = full)
 	pet_hunger resd 1   			; 0-100 (100 = starved)
 	pet_age    resd 1   			; Game cycles elapsed
-	pet_stage  resd 1   			; 0=Egg, 1=Baby, 2=Child, etc.
+	pet_stage  resd 1   			; 0=Egg, 1=Baby, 2=Child, 3=Adult, etc.
     pet_strength resd 1             ; 0-100 (New stat for training/evolution)
 
 	; --- RANDOM SEED (64-bit QWORD) ---
@@ -330,13 +337,16 @@ display_art:
     
     ; 1. Determine which sprite pointer to use based on pet_stage
     mov eax, [pet_stage]    ; Load current stage (0, 1, 2, ...)
-    mov rsi, sprite_egg     ; Default to Egg
+    mov rsi, sprite_egg     ; Default to Egg (Stage 0)
     
     cmp eax, 1
     je .set_baby
     
     cmp eax, 2
-    jge .set_child          ; Use Child for stage >= 2
+    je .set_child
+    
+    cmp eax, 3
+    jge .set_adult          ; Use Adult for stage >= 3
     jmp .start_render       ; Use default Egg
     
 .set_baby:
@@ -345,6 +355,10 @@ display_art:
     
 .set_child:
     mov rsi, sprite_child
+    jmp .start_render
+
+.set_adult:
+    mov rsi, sprite_adult
     
 .start_render:
     mov rcx, 8              ; Outer loop counter: 8 rows (RCX)
@@ -700,10 +714,77 @@ check_random_event:
 ; ----------------------------------------------------------------------
 
 ; ----------------------------------------------------------------------
-; ROUTINE: check_evolution (Placeholder)
-; Will be implemented soon as T3.
+; ROUTINE: check_evolution
+; Checks current pet state against evolution thresholds and updates pet_stage.
+; Evolution Rules:
+; Stage 0 (Egg) -> Stage 1 (Baby): Age >= 5
+; Stage 1 (Baby) -> Stage 2 (Child): Age >= 15 AND Strength >= 30
+; Stage 2 (Child) -> Stage 3 (Adult): Age >= 30 AND Strength >= 70
 ; ----------------------------------------------------------------------
 check_evolution:
+    push rbp
+    mov rbp, rsp
+    push rax
+    push rdx
+    
+    mov eax, [pet_stage]
+    
+    ; --- Check Evolution from Stage 2 (Child) to Stage 3 (Adult) ---
+    cmp eax, 2
+    jne .check_stage_1
+    
+    mov edx, [pet_age]      ; EDX = Age
+    cmp edx, 30             ; Check Age >= 30
+    jl .no_evolution        ; If Age < 30, no evolution
+    
+    mov edx, [pet_strength] ; EDX = Strength
+    cmp edx, 70             ; Check Strength >= 70
+    jl .no_evolution        ; If Strength < 70, no evolution
+    
+    ; Success: Evolve to Stage 3
+    mov dword [pet_stage], 3
+    jmp .evolved
+
+.check_stage_1:
+    ; --- Check Evolution from Stage 1 (Baby) to Stage 2 (Child) ---
+    cmp eax, 1
+    jne .check_stage_0
+    
+    mov edx, [pet_age]      ; EDX = Age
+    cmp edx, 15             ; Check Age >= 15
+    jl .no_evolution        ; If Age < 15, no evolution
+    
+    mov edx, [pet_strength] ; EDX = Strength
+    cmp edx, 30             ; Check Strength >= 30
+    jl .no_evolution        ; If Strength < 30, no evolution
+    
+    ; Success: Evolve to Stage 2
+    mov dword [pet_stage], 2
+    jmp .evolved
+    
+.check_stage_0:
+    ; --- Check Evolution from Stage 0 (Egg) to Stage 1 (Baby) ---
+    cmp eax, 0
+    jne .no_evolution       ; Only Egg evolves here
+    
+    mov edx, [pet_age]      ; EDX = Age
+    cmp edx, 5              ; Check Age >= 5
+    jl .no_evolution        ; If Age < 5, no evolution
+    
+    ; Success: Evolve to Stage 1
+    mov dword [pet_stage], 1
+    
+.evolved:
+    ; Print Evolution Message
+    mov rdi, msg_evolution
+    mov rsi, len_evolution
+    call print_string
+    
+.no_evolution:
+    pop rdx
+    pop rax
+    mov rsp, rbp
+    pop rbp
     ret
 ; ----------------------------------------------------------------------
 
@@ -842,13 +923,16 @@ _start:
 	; C. EVENT CHECK: Call check_random_event (Uses PRNG_SEED)
     call check_random_event
     
-	; D. UPDATE: Call update_state (Decay logic, Age++)
+	; D. EVOLUTION CHECK: Call check_evolution (T3 implemented)
+    call check_evolution
+    
+	; E. UPDATE: Call update_state (Decay logic, Age++)
     call update_state
     
-	; E. CHECK: Call check_death (If Health <= 0 or Age > MAX_AGE)
+	; F. CHECK: Call check_death (If Health <= 0 or Age > MAX_AGE)
     call check_death
 
-	; F. PAUSE: Syscall 35 (nanosleep) for 1 second.
+	; G. PAUSE: Syscall 35 (nanosleep) for 1 second.
     mov rax, SYS_NANOSLEEP          	; Syscall 35
     mov rdi, sleep_req_sec          	; Request time structure (1 second)
     mov rsi, sleep_rem              	; Remaining time structure (placeholder)
@@ -863,15 +947,17 @@ _start:
 ; 1. Data/State (.bss)
 ; 2. Print utility (print_num, print_string)
 ; 3. Visuals (ANSI codes, optimized 8x8 Hex Sprites)
-; 4. Core Game Loop logic (A-F steps implemented with calls)
+; 4. Core Game Loop logic (A-G steps implemented with calls)
 ; 5. Randomness (generate_random_number, check_random_event)
 ; 6. User Actions (handle_input, apply_feed, apply_train)
 ; 7. Robustness (setup_sigint_handler for Ctrl+C)
 ; 
 ; Next immediate tasks:
 ;
-; **T3. Evolution Logic:** Implement `check_evolution` logic based on age and pet_strength. This is a vital next step for the V-Pet concept.
-; **T4. Death Conditions:** The `check_death` routine is now implemented!
+; **T3. Evolution Logic:** Implemented in check_evolution based on age and pet_strength.
+; **T4. Death Conditions:** Implemented in check_death.
+; **T5. Random Event Logic:** Enhance `check_random_event` to actually apply effects (e.g., small health loss or gain).
+; **T6. Battle System:** Define an enemy sprite and battle logic based on pet_strength.
 ;
 ;----------------------------------------------------------------------
 ;
