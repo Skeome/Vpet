@@ -15,39 +15,102 @@ section .data
 	SYS_WRITE equ 1
 	SYS_EXIT equ 60
 	SYS_NANOSLEEP equ 35
+    SYS_RT_SIGACTION equ 13     ; Syscall for setting up signal handlers
 
-	; --- ANSI COLOR CODES ---
+    ; --- SIGNAL HANDLING CONSTANTS ---
+    SIGINT equ 2                ; Signal 2 = Interrupt (Ctrl+C)
+    SA_RESTORER equ 0x04000000  ; Required flag for rt_sigaction
+    
+	; --- ANSI COLOR CODES (Demoscene Flair) ---
 	ANSI_RESET db 0x1B, "[0m"
 	LEN_RESET equ $ - ANSI_RESET
+	
+    ; Foreground Colors
 	ANSI_RED db 0x1B, "[31m"
 	LEN_RED equ $ - ANSI_RED
 	ANSI_GREEN db 0x1B, "[32m"
 	LEN_GREEN equ $ - ANSI_GREEN
 	ANSI_YELLOW db 0x1B, "[33m"
 	LEN_YELLOW equ $ - ANSI_YELLOW
+    
+    ; Clear Screen and Move Cursor to Home
+    ANSI_CLEAR_SCREEN db 0x1B, "[2J", 0x1B, "[H" ; \e[2J (Clear), \e[H (Home)
+    LEN_CLEAR_SCREEN equ $ - ANSI_CLEAR_SCREEN
 
 	; --- TEXT MESSAGES ---
 	msg_title db '--- V-PET: Hatchling Console ---', 0xA, 0xA
 	len_title equ $ - msg_title
 
-	msg_error db 'ERROR: Program encountered a critical failure.', 0xA
+    msg_status_hdr db 0xA, 0xA, "STATUS:", 0xA
+    len_status_hdr equ $ - msg_status_hdr
+    
+    msg_health_label db "  HEALTH: "
+    len_health_label equ $ - msg_health_label
+    
+    msg_hunger_label db "  HUNGER: "
+    len_hunger_label equ $ - msg_hunger_label
+    
+    msg_age_label db "  AGE: "
+    len_age_label equ $ - msg_age_label
+    
+    msg_strength_label db "  STRENGTH: "
+    len_strength_label equ $ - msg_strength_label
+    
+    msg_menu db 0xA, "--- ACTIONS ---", 0xA
+             db "1. Feed | 2. Train | 3. Quit", 0xA
+             db "Choice: "
+    len_menu equ $-msg_menu
+    
+    msg_action_feed db "ACTION: Delicious food consumed. +10 Health!", 0xA
+    len_action_feed equ $-msg_action_feed
+    
+    msg_action_train db "ACTION: Training complete. Strength +5!", 0xA
+    len_action_train equ $-msg_action_train
+    
+    msg_action_invalid db "ACTION: Invalid choice. Try again.", 0xA
+    len_action_invalid equ $-msg_action_invalid
+
+    msg_event_found db "EVENT: A wild event occurred!", 0xA
+    len_event_found equ $ - msg_event_found
+    
+    msg_error db 'ERROR: Program encountered a critical failure.', 0xA
 	len_error equ $ - msg_error
 
 	msg_newline db 0xA
 	len_newline equ $ - msg_newline
+
+	; --- PET ASCII ART SPRITES (8x8 Demoscene Inspired) ---
+    ; Stage 0: EGG (Initial State)
+    ; Need to add an 8x8 hex matrix for the sprite
+    
+    ; Stage 1: BABY
+    ;This needs to be an 8x8 hexadecimal pixel matrix
 
 	; --- TIME STRUCTURE (for nanosleep) ---
 	; struct timespec { long tv_sec; long tv_nsec; };
 	; We will sleep for 1 second per cycle.
 	sleep_req_sec dq 1				; tv_sec = 1
 	sleep_req_nsec dq 0      		; tv_nsec = 0
+    
+    ; --- LCG CONSTANTS (for PRNG) ---
+    LCG_MULTIPLIER dq 6364136223846793005
+    LCG_INCREMENT dq 1442695040888963407
+
+    ; --- SIGACTION STRUCTURE ---
+    ; struct sigaction { void (*sa_handler)(int); unsigned long sa_flags; ... }
+    ; We only need the handler address and flags.
+    sa_handler dq clean_exit        ; Function to call (clean_exit)
+    sa_flags dq SA_RESTORER         ; Flags
+    sa_mask dq 0                    ; Signal mask (sa_mask[0] = 8 bytes)
+    sa_restorer dq 0                ; sa_restorer (8 bytes)
 
 section .bss
 	; --- CORE PET STATE (32-bit DWORDS) ---
 	pet_health resd 1   			; 0-100 (100 = full)
 	pet_hunger resd 1   			; 0-100 (100 = starved)
 	pet_age    resd 1   			; Game cycles elapsed
-	pet_stage  resd 1   			; 0=Egg, 1=Baby1, 2=Baby2, 3=Child1, etc.
+	pet_stage  resd 1   			; 0=Egg, 1=Baby, 2=Child, etc.
+    pet_strength resd 1             ; 0-100 (New stat for training/evolution)
 
 	; --- RANDOM SEED (64-bit QWORD) ---
 	prng_seed resq 1    			; Used for generating random events/battles.
@@ -61,6 +124,8 @@ section .bss
 
 section .text
 	global _start
+
+; --- UTILITY ROUTINES -------------------------------------------------
 
 ; ----------------------------------------------------------------------
 ; ROUTINE: print_string
@@ -104,6 +169,15 @@ print_num:
 	mov rsi, num_buffer     			; Use buffer as scratchpad
 	mov ecx, 0              			; Digit counter (length of the number string)
 	mov ebx, 10             			; Divisor (10)
+    
+    ; Handle case where number is 0 (to avoid infinite loop if EAX=0)
+    cmp eax, 0
+    jne .divide_loop
+    
+    ; If EAX is 0, manually set first digit to '0'
+    mov byte [rsi], '0'
+    mov ecx, 1
+    jmp .print_setup
 
 .divide_loop:
 	; Use 32-bit division: IDIV uses EDX:EAX as dividend.
@@ -118,11 +192,8 @@ print_num:
 	jnz .divide_loop        			; Loop if quotient is not zero
 
 ; --- Print the digits from the buffer (which are currently reversed) ---
+.print_setup:
 	; RCX holds the count (length of number string)
-
-	; We need to print them in reverse order by iterating backward from the end
-	; RSI is the start of the buffer. Start printing from (RSI + RCX - 1)
-
 	mov rdx, rcx            			; RDX = total length (digit count)
 	mov rsi, num_buffer     			; RSI = starting address
 	add rsi, rdx            			; Point RSI to the byte AFTER the last digit
@@ -147,14 +218,493 @@ print_num:
 	mov rsp, rbp
 	pop rbp
 	ret
+; ----------------------------------------------------------------------
+
+; --- DISPLAY ROUTINES -------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: display_stat (Internal Helper)
+; Prints a label, applies a color based on value, prints the number, and resets color.
+; Args:
+;   rdi: Label string address
+;   rsi: Label string length
+;   edx: 32-bit number value (e.g., pet_health)
+; ----------------------------------------------------------------------
+display_stat:
+    push rbp
+    mov rbp, rsp
+    push rsi                ; Save label length
+    push rdi                ; Save label address
+    push rdx                ; Save number value (EDX)
+
+    ; 1. Print Label
+    mov rdx, rsi            ; RDX = length
+    call print_string       ; Prints label (e.g., "  HEALTH: ")
+    
+    ; 2. Apply Color based on value (EDX) - Demoscene Visual Feedback
+    pop rax                 ; Restore number value to EAX
+    push rax                ; Save it again for print_num call
+    
+    cmp eax, 30
+    jg .green_color         ; If value > 30, go to green check
+    
+    ; Value <= 30 (Critical/Low) -> RED
+    mov rdi, ANSI_RED
+    mov rsi, LEN_RED
+    call print_string
+    jmp .print_number
+    
+.green_color:
+    cmp eax, 70
+    jge .green_set          ; If value >= 70, go to green
+    
+    ; Value 31-69 (Warning/Normal) -> YELLOW
+    mov rdi, ANSI_YELLOW
+    mov rsi, LEN_YELLOW
+    call print_string
+    jmp .print_number
+    
+.green_set:
+    ; Value 70-100 (Good/Full) -> GREEN
+    mov rdi, ANSI_GREEN
+    mov rsi, LEN_GREEN
+    call print_string
+
+.print_number:
+    ; 3. Print Number
+    pop eax                 ; Restore number to EAX
+    call print_num
+    
+    ; 4. Reset Color
+    mov rdi, ANSI_RESET
+    mov rsi, LEN_RESET
+    call print_string
+    
+    ; 5. Print Newline
+    mov rdi, msg_newline
+    mov rsi, len_newline
+    call print_string
+    
+    pop rdx                 ; Restore original label address
+    pop rdx                 ; Restore original label length
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: display_art
+; Prints the ASCII art corresponding to the current pet_stage.
+; ----------------------------------------------------------------------
+display_art:
+    push rbp
+    mov rbp, rsp
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    
+    mov eax, [pet_stage]    ; Load current stage (0, 1, 2, ...)
+    
+    ; Check which sprite to load based on pet_stage
+    cmp eax, 0
+    je .print_egg
+    
+    cmp eax, 1
+    je .print_baby
+    
+    ; Default to Child sprite if stage is >= 2 or unknown
+    mov rdi, sprite_child
+    mov rsi, len_sprite_child
+    jmp .print_sprite
+
+.print_egg:
+    mov rdi, sprite_egg
+    mov rsi, len_sprite_egg
+    jmp .print_sprite
+    
+.print_baby:
+    mov rdi, sprite_baby
+    mov rsi, len_sprite_baby
+    jmp .print_sprite
+
+.print_sprite:
+    call print_string       ; RDI/RSI already hold address/length
+    
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: display_status
+; Clears the screen and prints the pet's art and status stats.
+; ----------------------------------------------------------------------
+display_status:
+    push rbp
+    mov rbp, rsp
+
+    ; 1. Clear Screen (Demoscene Effect)
+    mov rdi, ANSI_CLEAR_SCREEN
+    mov rsi, LEN_CLEAR_SCREEN
+    call print_string
+
+    ; 2. Display Pet Art
+    call display_art
+
+    ; 3. Display Status Header
+    mov rdi, msg_status_hdr
+    mov rsi, len_status_hdr
+    call print_string
+    
+    ; 4. Display Health (Pass Health value in EDX)
+    mov rdi, msg_health_label
+    mov rsi, len_health_label
+    mov edx, [pet_health]
+    call display_stat
+
+    ; 5. Display Hunger (Pass Hunger value in EDX)
+    mov rdi, msg_hunger_label
+    mov rsi, len_hunger_label
+    mov edx, [pet_hunger]
+    call display_stat
+
+    ; 6. Display Age (Pass Age value in EDX)
+    mov rdi, msg_age_label
+    mov rsi, len_age_label
+    mov edx, [pet_age]
+    call display_stat
+    
+    ; 7. Display Strength (New Stat)
+    mov rdi, msg_strength_label
+    mov rsi, len_strength_label
+    mov edx, [pet_strength]
+    call display_stat
+    
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; --- ACTION ROUTINES --------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: apply_feed
+; Reduces pet_hunger by 20 and increases pet_health by 10. Clamps limits.
+; ----------------------------------------------------------------------
+apply_feed:
+    push rbp
+    mov rbp, rsp
+    push rax
+    push rsi
+    
+    ; Hunger: Hunger -= 20, clamp minimum to 0
+    mov esi, [pet_hunger]
+    sub esi, 20
+    mov eax, 0
+    cmp esi, eax            ; Check if Hunger < 0
+    cmovl esi, eax          ; If less, set ESI = 0 (clamped)
+    mov [pet_hunger], esi
+    
+    ; Health: Health += 10, clamp maximum to 100
+    mov esi, [pet_health]
+    add esi, 10
+    mov eax, 100
+    cmp esi, eax            ; Check if Health > 100
+    cmovg esi, eax          ; If greater, set ESI = 100 (clamped)
+    mov [pet_health], esi
+    
+    ; Print feedback message
+    mov rdi, msg_action_feed
+    mov rsi, len_action_feed
+    call print_string
+    
+    pop rsi
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: apply_train
+; Increases pet_strength by 5. Clamps maximum to 100.
+; ----------------------------------------------------------------------
+apply_train:
+    push rbp
+    mov rbp, rsp
+    push rax
+    push rsi
+    
+    ; Strength: Strength += 5, clamp maximum to 100
+    mov esi, [pet_strength]
+    add esi, 5
+    mov eax, 100
+    cmp esi, eax            ; Check if Strength > 100
+    cmovg esi, eax          ; If greater, set ESI = 100 (clamped)
+    mov [pet_strength], esi
+    
+    ; Print feedback message
+    mov rdi, msg_action_train
+    mov rsi, len_action_train
+    call print_string
+    
+    pop rsi
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: handle_input
+; Displays menu, reads choice, executes corresponding action, or exits.
+; ----------------------------------------------------------------------
+handle_input:
+    push rbp
+    mov rbp, rsp
+    push rdi
+    push rsi
+    push rdx
+    
+    ; 1. Print Menu
+    mov rdi, msg_menu
+    mov rsi, len_menu
+    call print_string
+    
+    ; 2. Read User Input (1 byte + newline)
+    mov rax, SYS_READ       ; Syscall 0
+    mov rdi, STDIN          ; stdin
+    mov rsi, input_choice
+    mov rdx, 4              ; Read up to 4 bytes (choice + newline + nulls)
+    syscall
+    
+    ; 3. Process Choice - Use the first byte of input buffer
+    movzx rax, byte [input_choice] ; Load choice into AL, zero-extend to RAX
+    
+    cmp al, '1'
+    je .feed_choice
+    
+    cmp al, '2'
+    je .train_choice
+    
+    cmp al, '3'
+    je .quit_requested
+    
+    ; Invalid Choice Handler
+    mov rdi, msg_action_invalid
+    mov rsi, len_action_invalid
+    call print_string
+    
+    ; Default: Continue game loop
+    xor eax, eax            ; Return 0 (continue)
+    jmp .return
+    
+.feed_choice:
+    call apply_feed
+    xor eax, eax            ; Return 0 (continue)
+    jmp .return
+    
+.train_choice:
+    call apply_train
+    xor eax, eax            ; Return 0 (continue)
+    jmp .return
+
+.quit_requested:
+    mov eax, 1              ; Return 1 (quit)
+    
+.return:
+    pop rdx
+    pop rsi
+    pop rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; --- GAME LOGIC ROUTINES ----------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: update_state
+; Decreases health, increases hunger, increases age, etc.
+; ----------------------------------------------------------------------
+update_state:
+    push rbp
+    mov rbp, rsp
+    
+    ; --- AGE INCREMENT ---
+    inc dword [pet_age]
+    
+    ; --- HUNGER DECAY ---
+    mov esi, [pet_hunger]
+    add esi, 5
+    
+    ; Clamp max hunger to 100
+    mov eax, 100
+    cmp esi, eax
+    cmovg esi, eax
+    mov [pet_hunger], esi
+    
+    ; --- HEALTH DECAY (Penalty if Hunger > 80) ---
+    mov esi, [pet_hunger]
+    mov eax, [pet_health]
+    cmp esi, 80             ; Check if hunger is high
+    jle .skip_health_penalty
+    
+    ; Health -= 5
+    sub eax, 5
+    
+.skip_health_penalty:
+    ; Clamp min health to 0
+    mov esi, 0
+    cmp eax, esi
+    cmovl eax, esi          ; If less than 0, set EAX=0
+    mov [pet_health], eax
+    
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: generate_random_number
+; Implements a 64-bit LCG, returning a 32-bit random number (0-99) in EAX.
+; This is a fast, highly optimized PRNG using native CPU instructions.
+; Args: None
+; Returns: EAX = Random number (0-99)
+; ----------------------------------------------------------------------
+generate_random_number:
+    push rbp
+    mov rbp, rsp
+    push rdx
+    push rdi
+    
+    ; 1. Load Current Seed (64-bit)
+    mov rax, [prng_seed]
+    
+    ; 2. Mix with current Time-Stamp Counter (RDTSC) for entropy
+    rdtsc                   ; RDX:RAX = 64-bit TSC
+    xor [prng_seed], rax    ; Mix low TSC bits into seed
+    ;xor [prng_seed+8], rdx  ; Removed mixing high TSC bits as seed is only 64-bit
+    mov rax, [prng_seed]    ; Reload the (now mixed) seed into RAX
+    
+    ; 3. LCG Update: Seed = (Seed * Multiplier) + Increment
+    ; RAX = Seed, Multiplier in memory (LCG_MULTIPLIER)
+    mul qword [LCG_MULTIPLIER]  ; RDX:RAX = RAX * LCG_MULTIPLIER (64x64=128 bit result)
+    add rax, [LCG_INCREMENT]    ; Add Increment to the lower 64 bits (RAX)
+    mov [prng_seed], rax        ; Store the new 64-bit seed (RAX)
+    
+    ; 4. Constrain the result to 0-99 (for percentage chances)
+    ; Use the high part of the multiplication (RDX) as the random number
+    mov ebx, 100            ; Divisor = 100
+    mov eax, edx            ; Move high 32 bits (EDX) into EAX
+    xor edx, edx            ; Clear EDX for 32-bit division
+    div ebx                 ; EAX = quotient, EDX = Remainder (0-99)
+    
+    mov eax, edx            ; EAX now holds the random number (0-99)
+    
+    pop rdi
+    pop rdx
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+
+; ----------------------------------------------------------------------
+; ROUTINE: check_random_event
+; Uses the PRNG to determine if a random event or battle occurs.
+; Currently set for a 5% chance per game cycle.
+; ----------------------------------------------------------------------
+check_random_event:
+    push rbp
+    mov rbp, rsp
+    push rdi
+    push rsi
+    
+    call generate_random_number ; EAX = random number (0-99)
+    
+    cmp eax, 5                  ; Check if Random Number is <= 5 (5% chance)
+    jg .no_event                ; If > 5, skip the event
+    
+    ; --- EVENT TRIGGERED ---
+    mov rdi, msg_event_found
+    mov rsi, len_event_found
+    call print_string           ; Notify the user
+    
+.no_event:
+    pop rsi
+    pop rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: check_death (Placeholder)
+; ----------------------------------------------------------------------
+check_death:
+    ; We will implement the check here soon.
+    ret
+; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: setup_sigint_handler
+; Sets up a signal handler for SIGINT (Ctrl+C) to call clean_exit.
+; Uses SYS_RT_SIGACTION (syscall 13)
+; ----------------------------------------------------------------------
+setup_sigint_handler:
+    push rbp
+    mov rbp, rsp
+    push rax
+    push rdi
+    push rsi
+    push rdx
+    push r10
+    push r8
+    
+    ; Syscall arguments:
+    ; RAX = SYS_RT_SIGACTION (13)
+    ; RDI = signal number (SIGINT = 2)
+    ; RSI = new action (address of struct sa_handler)
+    ; RDX = old action (NULL / 0)
+    ; R10 = size of sigset_t (8 bytes for 64-bit)
+    
+    mov rax, SYS_RT_SIGACTION
+    mov rdi, SIGINT             ; Signal number (2)
+    mov rsi, sa_handler         ; Pointer to new sigaction struct (sa_handler, sa_flags, sa_mask...)
+    mov rdx, 0                  ; No need to retrieve old action
+    mov r10, 8                  ; Size of sigset_t (8 bytes)
+    mov r8, 0                   ; Restore frame (unused)
+    syscall                     ; Execute syscall
+    
+    pop r8
+    pop r10
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
 
 ; ----------------------------------------------------------------------
 ; ROUTINE: clean_exit
 ; Exits the program with a success status (0).
 ; ----------------------------------------------------------------------
 clean_exit:
-	mov rax, SYS_EXIT					; Syscall 60 (exit)
-	mov rdi, EXIT_SUCCESS				; Exit status 0
+	mov rax, SYS_EXIT		; Syscall 60 (exit)
+	mov rdi, EXIT_SUCCESS	; Exit status 0
 	syscall
 ; ----------------------------------------------------------------------
 
@@ -163,14 +713,14 @@ clean_exit:
 ; Displays an error message and exits the program with a failure status (1).
 ; ----------------------------------------------------------------------
 error_exit:
-	; Print Error Message
+    ; Print Error Message
 	mov rdi, msg_error
 	mov rsi, len_error
 	call print_string
 
-	; Exit with Error Code
-	mov rax, SYS_EXIT					; Syscall 60 (exit)
-	mov rdi, EXIT_FAILURE				; Exit status 1
+    ; Exit with Error Code
+	mov rax, SYS_EXIT		; Syscall 60 (exit)
+	mov rdi, EXIT_FAILURE	; Exit status 1
 	syscall
 ; ----------------------------------------------------------------------
 
@@ -180,46 +730,66 @@ _start:
 	mov dword [pet_health], 100
 	mov dword [pet_hunger], 50
 	mov dword [pet_age], 0
-	mov dword [pet_stage], 0			; Start at Egg stage
-
-	; 2. Initialize PRNG Seed
-	; Use the current time-stamp counter for a non-deterministic seed
-	rdtsc                       		; RDX:RAX = 64-bit time-stamp counter
-	mov [prng_seed], rax
-
-	; 3. Print Welcome Message
+    mov dword [pet_strength], 0 ; New stat initialized
+	mov dword [pet_stage], 0    ; Start at Egg stage
+    
+    ; 2. Initialize PRNG Seed
+    rdtsc                       ; RDX:RAX = 64-bit time-stamp counter
+    mov [prng_seed], rax        ; Use the initial TSC as the very first seed
+    
+    ; 3. Setup Signal Handler for Ctrl+C
+    call setup_sigint_handler
+    
+    ; 4. Print Welcome Message
 	mov rdi, msg_title
 	mov rsi, len_title
 	call print_string
     
 .game_loop_start:
 	; A. DISPLAY: Call display_status
+    call display_status
+    
 	; B. INPUT: Call handle_input (User action: Feed, Train, Clean, Quit)
-
+    call handle_input
+    cmp eax, 1              ; Did handle_input return 1 (Quit)?
+    je clean_exit           ; If yes, exit gracefully
+    
 	; C. EVENT CHECK: Call check_random_event (Uses PRNG_SEED)
-
+    call check_random_event
+    
 	; D. UPDATE: Call update_state (Decay logic, Age++)
+    call update_state
+    
 	; E. CHECK: Call check_death (If Health <= 0 or Age > MAX_AGE)
+    call check_death
 
 	; F. PAUSE: Syscall 35 (nanosleep) for 1 second.
-	; (This requires the time_req structure to be setup, which we have in .data)
-    
-	; --- Implementation of the PAUSE step (Syscall 35) ---
-	mov rax, SYS_NANOSLEEP          	; Syscall 35
-	mov rdi, sleep_req_sec          	; Request time structure (1 second)
-	mov rsi, sleep_rem              	; Remaining time structure (placeholder)
-	syscall
+    mov rax, SYS_NANOSLEEP          	; Syscall 35
+    mov rdi, sleep_req_sec          	; Request time structure (1 second)
+    mov rsi, sleep_rem              	; Remaining time structure (placeholder)
+    syscall
     
 	jmp .game_loop_start
     
-	; This jump should eventually lead to clean_exit, but for now, it loops.
-	; We'll add the quit condition inside the game loop later.
 
-; --- Subroutines will be placed here (e.g., print_num, display_status, update_state) ---
-
-
-
+; ----------------------------------------------------------------------
 ; --- BRAINSTORMING AREA ---
+;
+; The architecture is now defined. We have:
+; 1. Data/State (.bss)
+; 2. Print utility (print_num, print_string)
+; 3. Visuals (ANSI codes, ASCII Sprites)
+; 4. Core Game Loop logic (A-F steps implemented with calls)
+; 5. Randomness (generate_random_number, check_random_event)
+; 6. User Actions (handle_input, apply_feed, apply_train)
+; 7. Robustness (setup_sigint_handler for Ctrl+C)
+; 
+; Next immediate tasks:
+;
+; **T3. Evolution Logic:** Implement `check_evolution` logic based on age and pet_strength. This is a vital next step for the V-Pet concept.
+; **T4. Death Conditions:** Implement the `check_death` routine logic.
+;
+;----------------------------------------------------------------------
 ;
 ; Subroutines needed:
 ;
