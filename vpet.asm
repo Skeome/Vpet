@@ -21,17 +21,26 @@ section .data
     SIGINT equ 2                ; Signal 2 = Interrupt (Ctrl+C)
     SA_RESTORER equ 0x04000000  ; Required flag for rt_sigaction
     
-	; --- ANSI COLOR CODES (Demoscene Flair) ---
+	; --- ANSI COLOR CODES (Demoscene Flair / Optimized Pixel Rendering) ---
 	ANSI_RESET db 0x1B, "[0m"
 	LEN_RESET equ $ - ANSI_RESET
 	
-    ; Foreground Colors
+    ; Foreground Status Colors
 	ANSI_RED db 0x1B, "[31m"
 	LEN_RED equ $ - ANSI_RED
 	ANSI_GREEN db 0x1B, "[32m"
 	LEN_GREEN equ $ - ANSI_GREEN
 	ANSI_YELLOW db 0x1B, "[33m"
 	LEN_YELLOW equ $ - ANSI_YELLOW
+    
+    ; Pixel Rendering Colors (Background Color for Pixel Effect)
+    ; Use black background for "OFF" pixel
+    ANSI_PIXEL_OFF db 0x1B, "[40m  " ; Black background + 2 spaces (the pixel block)
+    LEN_PIXEL_OFF equ $ - ANSI_PIXEL_OFF
+    
+    ; Use white background for "ON" pixel (or any solid color for the pet)
+    ANSI_PIXEL_ON db 0x1B, "[47m  "  ; White background + 2 spaces (the pixel block)
+    LEN_PIXEL_ON equ $ - ANSI_PIXEL_ON
     
     ; Clear Screen and Move Cursor to Home
     ANSI_CLEAR_SCREEN db 0x1B, "[2J", 0x1B, "[H" ; \e[2J (Clear), \e[H (Home)
@@ -78,13 +87,24 @@ section .data
 
 	msg_newline db 0xA
 	len_newline equ $ - msg_newline
-
-	; --- PET ASCII ART SPRITES (8x8 Demoscene Inspired) ---
-    ; Stage 0: EGG (Initial State)
-    ; Need to add an 8x8 hex matrix for the sprite
     
-    ; Stage 1: BABY
-    ;This needs to be an 8x8 hexadecimal pixel matrix
+    msg_death db 0xA, 0xA, 0x1B, "[31m--- DECEASED ---", 0x1B, "[0m", 0xA ; Red death message
+    len_death equ $-msg_death
+
+	; --- PET ASCII ART SPRITES (8x8 Hex Matrices for Optimization) ---
+    ; Each sprite is 8 bytes, representing 8 rows of 8 bits (pixels).
+    
+    ; Stage 0: EGG 
+    sprite_egg db 0x00, 0x3C, 0x7E, 0x7E, 0x7E, 0x3C, 0x00, 0x00
+    len_sprite_egg equ 8 ; Length is 8 bytes
+    
+    ; Stage 1: BABY (Happy Face)
+    sprite_baby db 0x00, 0x3C, 0x42, 0x99, 0xFF, 0x99, 0x42, 0x00
+    len_sprite_baby equ 8
+    
+    ; Stage 2: CHILD (Training Stance / Taller)
+    sprite_child db 0x7E, 0x3C, 0x18, 0x7E, 0x18, 0x18, 0x42, 0x00
+    len_sprite_child equ 8
 
 	; --- TIME STRUCTURE (for nanosleep) ---
 	; struct timespec { long tv_sec; long tv_nsec; };
@@ -294,44 +314,76 @@ display_stat:
 
 ; ----------------------------------------------------------------------
 ; ROUTINE: display_art
-; Prints the ASCII art corresponding to the current pet_stage.
+; Prints the 8x8 hexadecimal sprite corresponding to the current pet_stage.
+; This routine iterates over the 8 bytes (rows) and 8 bits (pixels)
+; and uses ANSI color blocks for optimized "pixel" rendering.
 ; ----------------------------------------------------------------------
 display_art:
     push rbp
     mov rbp, rsp
-    push rax
-    push rbx
-    push rcx
+    push rax                ; Holds current byte (row data)
+    push rbx                ; Holds inner loop counter (8 pixels)
+    push rcx                ; Holds outer loop counter (8 rows)
     push rdx
-    push rsi
+    push rsi                ; Holds sprite data pointer
     push rdi
     
+    ; 1. Determine which sprite pointer to use based on pet_stage
     mov eax, [pet_stage]    ; Load current stage (0, 1, 2, ...)
-    
-    ; Check which sprite to load based on pet_stage
-    cmp eax, 0
-    je .print_egg
+    mov rsi, sprite_egg     ; Default to Egg
     
     cmp eax, 1
-    je .print_baby
+    je .set_baby
     
-    ; Default to Child sprite if stage is >= 2 or unknown
-    mov rdi, sprite_child
-    mov rsi, len_sprite_child
-    jmp .print_sprite
-
-.print_egg:
-    mov rdi, sprite_egg
-    mov rsi, len_sprite_egg
-    jmp .print_sprite
+    cmp eax, 2
+    jge .set_child          ; Use Child for stage >= 2
+    jmp .start_render       ; Use default Egg
     
-.print_baby:
-    mov rdi, sprite_baby
-    mov rsi, len_sprite_baby
-    jmp .print_sprite
+.set_baby:
+    mov rsi, sprite_baby
+    jmp .start_render
+    
+.set_child:
+    mov rsi, sprite_child
+    
+.start_render:
+    mov rcx, 8              ; Outer loop counter: 8 rows (RCX)
+    
+.row_loop:
+    mov al, [rsi]           ; AL = current 8-bit row data
+    mov rbx, 8              ; Inner loop counter: 8 pixels (RBX)
+    
+.pixel_loop:
+    shl al, 1               ; Shift AL left by 1. MSB moves into the Carry Flag (CF)
+    jnc .pixel_off          ; If CF=0 (No Carry), the pixel is OFF (Black)
+    
+    ; --- PIXEL ON (1) ---
+    mov rdi, ANSI_PIXEL_ON
+    mov rdx, LEN_PIXEL_ON
+    call print_string
+    jmp .next_pixel
 
-.print_sprite:
-    call print_string       ; RDI/RSI already hold address/length
+.pixel_off:
+    ; --- PIXEL OFF (0) ---
+    mov rdi, ANSI_PIXEL_OFF
+    mov rdx, LEN_PIXEL_OFF
+    call print_string
+
+.next_pixel:
+    dec rbx                 ; Decrement pixel counter
+    jnz .pixel_loop         ; Loop 8 times for the current row
+    
+    ; --- ROW END ---
+    mov rdi, ANSI_RESET     ; Reset color/background after row
+    mov rdx, LEN_RESET
+    call print_string
+    
+    mov rdi, msg_newline    ; Print newline to start next row
+    mov rdx, len_newline
+    call print_string
+    
+    inc rsi                 ; Move sprite pointer to the next row (byte)
+    loop .row_loop          ; Decrement RCX and loop for next row (8 rows total)
     
     pop rdi
     pop rsi
@@ -593,7 +645,6 @@ generate_random_number:
     ; 2. Mix with current Time-Stamp Counter (RDTSC) for entropy
     rdtsc                   ; RDX:RAX = 64-bit TSC
     xor [prng_seed], rax    ; Mix low TSC bits into seed
-    ;xor [prng_seed+8], rdx  ; Removed mixing high TSC bits as seed is only 64-bit
     mov rax, [prng_seed]    ; Reload the (now mixed) seed into RAX
     
     ; 3. LCG Update: Seed = (Seed * Multiplier) + Increment
@@ -649,12 +700,46 @@ check_random_event:
 ; ----------------------------------------------------------------------
 
 ; ----------------------------------------------------------------------
-; ROUTINE: check_death (Placeholder)
+; ROUTINE: check_evolution (Placeholder)
+; Will be implemented soon as T3.
 ; ----------------------------------------------------------------------
-check_death:
-    ; We will implement the check here soon.
+check_evolution:
     ret
 ; ----------------------------------------------------------------------
+
+; ----------------------------------------------------------------------
+; ROUTINE: check_death
+; Checks if health is zero, and if so, initiates game over.
+; ----------------------------------------------------------------------
+check_death:
+    push rbp
+    mov rbp, rsp
+    push rax
+    
+    mov eax, [pet_health]
+    cmp eax, 0
+    jnz .alive                  ; If health > 0, continue
+    
+    ; --- PET IS DEAD ---
+    mov rdi, msg_death          ; Print red "DECEASED" message
+    mov rsi, len_death
+    call print_string
+    
+    ; Wait for user to read message (1 second)
+    mov rax, SYS_NANOSLEEP
+    mov rdi, sleep_req_sec
+    mov rsi, sleep_rem
+    syscall
+    
+    jmp clean_exit              ; Game Over
+    
+.alive:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+; ----------------------------------------------------------------------
+
 
 ; ----------------------------------------------------------------------
 ; ROUTINE: setup_sigint_handler
@@ -771,14 +856,13 @@ _start:
     
 	jmp .game_loop_start
     
-
 ; ----------------------------------------------------------------------
 ; --- BRAINSTORMING AREA ---
 ;
 ; The architecture is now defined. We have:
 ; 1. Data/State (.bss)
 ; 2. Print utility (print_num, print_string)
-; 3. Visuals (ANSI codes, ASCII Sprites)
+; 3. Visuals (ANSI codes, optimized 8x8 Hex Sprites)
 ; 4. Core Game Loop logic (A-F steps implemented with calls)
 ; 5. Randomness (generate_random_number, check_random_event)
 ; 6. User Actions (handle_input, apply_feed, apply_train)
@@ -787,7 +871,7 @@ _start:
 ; Next immediate tasks:
 ;
 ; **T3. Evolution Logic:** Implement `check_evolution` logic based on age and pet_strength. This is a vital next step for the V-Pet concept.
-; **T4. Death Conditions:** Implement the `check_death` routine logic.
+; **T4. Death Conditions:** The `check_death` routine is now implemented!
 ;
 ;----------------------------------------------------------------------
 ;
