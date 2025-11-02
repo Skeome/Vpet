@@ -16,7 +16,7 @@ section .data
 	SYS_EXIT equ 60
 	SYS_NANOSLEEP equ 35
 
-	; --- ANSI COLOR CODES (Demoscene Flair) ---
+	; --- ANSI COLOR CODES ---
 	ANSI_RESET db 0x1B, "[0m"
 	LEN_RESET equ $ - ANSI_RESET
 	ANSI_RED db 0x1B, "[31m"
@@ -217,3 +217,89 @@ _start:
 
 ; --- Subroutines will be placed here (e.g., print_num, display_status, update_state) ---
 
+
+
+; --- BRAINSTORMING AREA ---
+;
+; Subroutines needed:
+;
+; The first thing we need to do is make a window to display the program in.
+; This will require using Linux syscalls to create a terminal window.
+;
+; next, we need to create a simple background for the pet to exist in.
+; This can be done using ASCII art or simple characters to represent the environment.
+; This can also be done using ANSI color codes to make it more visually appealing.
+;
+; We also need to create the pet itself.
+; This can be done by making an 8x8 pixel grid and filling it with hex values
+; that represent the pet's appearance.
+; We can start with monochrome sprites and later expand to color sprites using ANSI color codes.
+; We can also expand to using sprite sheets for different animations (idle, happy, sad, eating, etc.)
+; but a static sprite is fine for now.
+;
+; We need to create a way to display the pet's stats. Possibly a simple text display at the bottom of the window.
+; 
+; We could also order our menus in an early RPG style with a pointer to select options.
+; This will require creating a simple menu system that can be navigated using the keyboard.
+; (Arrow keys or WASD, Enter or Space to select, Backspace to cancel)
+;
+; (Alternatively, we could stick to the original/classic vpet experience and assign 'A' 'B' or 'C' to keyboard buttons)
+; (Another alternative is the latest SCSA - or Super Complete Select Animation - Digivice Color style, with up/down to select, 'A' to confirm, 'B' to cancel)
+; Nevertheless, we need to create a way to handle user input.
+;
+;
+; We need to create a way to update the pet's stats over time.
+; Stats are updated whenever the pet trains or is fed.
+; Hunger increases over time, but health decreases if too much damage is taken.
+; Age increases over time, and the pet evolves at certain age milestones.
+; We also need to create a way to check for random events.
+; These events can be positive (finding money to buy special decorative items) or negative (getting sick, random enemy battle, etc).
+; Random events can be triggered based on the PRNG seed we set at the start of the program.
+; They can also be influenced by real-world events, such as internet signals or system time.
+; We can use the RDTSC instruction to get a time-stamp counter value and use that as a seed for our PRNG.
+;
+;
+; Additional brainstorming ideas:
+;
+; 11. **Dynamic Time-Based Events**:
+;     - Use the system clock to trigger events at specific times (e.g., feeding reminders every 5 minutes).
+;     - Implement a "day-night" cycle to influence pet behavior (e.g., sleep at night).
+;
+; 12. **Happiness Mechanic**:
+;     - Introduce a happiness stat that changes based on user interactions.
+;     - Positive actions (feeding, playing) increase happiness, while neglect decreases it.
+;     - Low happiness could lead to penalties (e.g., reduced health regeneration).
+;
+; 13. **Animation System**:
+;     - Create simple animations for the pet (e.g., blinking, moving).
+;     - Use ANSI escape codes to update the terminal display dynamically.
+;
+; 14. **Inventory System**:
+;     - Allow the user to collect and use items (e.g., food, medicine, toys).
+;     - Display the inventory in a menu and handle item usage.
+;
+; 15. **Sound Effects**:
+;     - Explore using the Linux `beep` command or other methods to add simple sound effects.
+;     - Example: Play a sound when the pet evolves or during battles.
+;
+; 16. **Advanced Random Events**:
+;     - Add rare events with unique outcomes (e.g., finding a rare item, encountering a special pet).
+;     - Use weighted probabilities to make some events more likely than others.
+;
+; 17. **Stat Decay Balancing**:
+;     - Fine-tune the rate at which stats like hunger and health change over time.
+;     - Ensure the game remains challenging but not frustrating for the player.
+;
+; 18. **Easter Eggs**:
+;     - Add hidden features or messages that players can discover (e.g., secret pet stages).
+;     - Trigger easter eggs based on specific inputs or rare random events.
+;
+; 19. **Multiplayer Interaction**:
+;     - Explore the possibility of connecting two instances of the program for pet battles or trading.
+;     - Use sockets or shared files for communication between instances.
+;
+; 20. **Achievements and Progress Tracking**:
+;     - Track player accomplishments (e.g., "Fed pet 100 times", "Survived 30 days").
+;     - Display achievements in a dedicated menu or at the end of the game.
+;
+;
