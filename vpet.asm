@@ -333,6 +333,7 @@ display_art:
     push rdx
     push rsi                ; Holds sprite data pointer
     push rdi
+    push r12                ; <--- Save R12 (callee-saved, safe for inner loop)
     
     ; 1. Determine which sprite pointer to use based on pet_stage
     mov eax, [pet_stage]    ; Load current stage (0, 1, 2, ...)
@@ -360,11 +361,11 @@ display_art:
     mov rsi, sprite_adult
     
 .start_render:
-    mov rcx, 8              ; Outer loop counter: 8 rows (RCX)
+    mov rbx, 8              ; <--- FIX: Outer loop counter: 8 rows (RBX is callee-saved)
     
 .row_loop:
     mov al, [rsi]           ; AL = current 8-bit row data
-    mov rbx, 8              ; Inner loop counter: 8 pixels (RBX)
+    mov r12, 8              ; <--- FIX: Inner loop counter: 8 pixels (R12 is callee-saved)
     
 .pixel_loop:
     shl al, 1               ; Shift AL left by 1. MSB moves into the Carry Flag (CF)
@@ -373,18 +374,18 @@ display_art:
     ; --- PIXEL ON (1) ---
     mov rdi, ANSI_PIXEL_ON
     mov rdx, LEN_PIXEL_ON
-    call print_string
+    call print_string       ; Syscall clobbers RCX, but not RBX or R12
     jmp .next_pixel
 
 .pixel_off:
     ; --- PIXEL OFF (0) ---
     mov rdi, ANSI_PIXEL_OFF
     mov rdx, LEN_PIXEL_OFF
-    call print_string
+    call print_string       ; Syscall clobbers RCX, but not RBX or R12
 
 .next_pixel:
-    dec rbx                 ; Decrement pixel counter
-    jnz .pixel_loop         ; Loop 8 times for the current row
+    dec r12                 ; <--- FIX: Decrement inner counter
+    jnz .pixel_loop         ; <--- FIX: Jump based on inner counter
     
     ; --- ROW END ---
     mov rdi, ANSI_RESET     ; Reset color/background after row
@@ -396,8 +397,10 @@ display_art:
     call print_string
     
     inc rsi                 ; Move sprite pointer to the next row (byte)
-    loop .row_loop          ; Decrement RCX and loop for next row (8 rows total)
+    dec rbx                 ; <--- FIX: Decrement outer counter
+    jnz .row_loop           ; <--- FIX: Jump based on outer counter
     
+    pop r12                 ; <--- Restore R12
     pop rdi
     pop rsi
     pop rdx
