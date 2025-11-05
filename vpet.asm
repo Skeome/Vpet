@@ -127,7 +127,7 @@ section .data
     ; struct sigaction { void (*sa_handler)(int); unsigned long sa_flags; ... }
     ; We only need the handler address and flags.
     sa_handler dq clean_exit        ; Function to call (clean_exit)
-    sa_flags dq SA_RESTORER         ; Flags
+    sa_flags dq 0        ; Flags
     sa_mask dq 0                    ; Signal mask (sa_mask[0] = 8 bytes)
     sa_restorer dq 0                ; sa_restorer (8 bytes)
 
@@ -299,7 +299,7 @@ display_stat:
 
 .print_number:
     ; 3. Print Number
-    pop eax                 ; Restore number to EAX
+    pop rax                 ; Restore number to EAX
     call print_num
     
     ; 4. Reset Color
@@ -312,8 +312,8 @@ display_stat:
     mov rsi, len_newline
     call print_string
     
-    pop rdx                 ; Restore original label address
-    pop rdx                 ; Restore original label length
+    pop rdi                 ; Restore original label address
+    pop rsi                 ; Restore original label length
     mov rsp, rbp
     pop rbp
     ret
