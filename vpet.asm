@@ -79,8 +79,14 @@ section .data
     msg_action_invalid db "ACTION: Invalid choice. Try again.", 0xA
     len_action_invalid equ $-msg_action_invalid
 
-    msg_event_found db "EVENT: A wild event occurred!", 0xA
+    msg_event_found db "EVENT: A wild event occurred... ", 0
     len_event_found equ $ - msg_event_found
+    
+    msg_event_good db "You found some extra food! +5 Health.", 0xA
+    len_event_good equ $ - msg_event_good
+    
+    msg_event_bad db "You tripped and spilled some food... +5 Hunger.", 0xA
+    len_event_bad equ $ - msg_event_bad
     
     msg_evolution db 0xA, 0x1B, "[36m--- EVOLVED! ---", 0x1B, "[0m", 0xA
     len_evolution equ $ - msg_evolution
@@ -311,6 +317,7 @@ display_stat:
     mov rsi, len_newline
     call print_string
     
+    pop rdx                 ; <--- FIX: Balance the stack. Pops the rdx pushed at the start.
     pop rdi                 ; Restore original label address (from push rdi)
     pop rsi                 ; Restore original label length (from push rsi)
     mov rsp, rbp
@@ -703,7 +710,7 @@ generate_random_number:
 ; ----------------------------------------------------------------------
 ; ROUTINE: check_random_event
 ; Uses the PRNG to determine if a random event or battle occurs.
-; Currently set for a 5% chance per game cycle.
+; T5: Now applies a small buff or debuff.
 ; ----------------------------------------------------------------------
 check_random_event:
     push rbp
@@ -711,18 +718,54 @@ check_random_event:
     push rdi
     push rsi
     push rax
+    push rbx
     
     call generate_random_number ; EAX = random number (0-99)
     
-    cmp eax, 5                  ; Check if Random Number is <= 5 (5% chance)
-    jg .no_event                ; If > 5, skip the event
+    cmp eax, 10                  ; Check if Random Number is <= 10 (10% chance)
+    jg .no_event                ; If > 10, skip the event
     
     ; --- EVENT TRIGGERED ---
     mov rdi, msg_event_found
     mov rsi, len_event_found
-    call print_string           ; Notify the user
+    call print_string           ; Notify the user ("EVENT: ...")
+    
+    ; Get another random number (0-99) to decide if event is good or bad
+    call generate_random_number
+    cmp eax, 50                 ; 50/50 chance
+    jl .good_event
+    
+.bad_event:
+    ; Apply +5 Hunger (clamp to 100)
+    mov ebx, [pet_hunger]
+    add ebx, 5
+    mov eax, 100
+    cmp ebx, eax
+    cmovg ebx, eax          ; If greater, set EBX = 100 (clamped)
+    mov [pet_hunger], ebx
+    
+    ; Print bad event message
+    mov rdi, msg_event_bad
+    mov rsi, len_event_bad
+    call print_string
+    jmp .no_event
+
+.good_event:
+    ; Apply +5 Health (clamp to 100)
+    mov ebx, [pet_health]
+    add ebx, 5
+    mov eax, 100
+    cmp ebx, eax
+    cmovg ebx, eax          ; If greater, set EBX = 100 (clamped)
+    mov [pet_health], ebx
+    
+    ; Print good event message
+    mov rdi, msg_event_good
+    mov rsi, len_event_good
+    call print_string
     
 .no_event:
+    pop rbx
     pop rax
     pop rsi
     pop rdi
