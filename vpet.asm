@@ -127,7 +127,7 @@ section .data
     ; struct sigaction { void (*sa_handler)(int); unsigned long sa_flags; ... }
     ; We only need the handler address and flags.
     sa_handler dq clean_exit        ; Function to call (clean_exit)
-    sa_flags dq 0        ; Flags
+    sa_flags dq 0         ; <--- FIX: Reverted to 0 as per user's correct implementation
     sa_mask dq 0                    ; Signal mask (sa_mask[0] = 8 bytes)
     sa_restorer dq 0                ; sa_restorer (8 bytes)
 
@@ -221,9 +221,9 @@ print_num:
 ; --- Print the digits from the buffer (which are currently reversed) ---
 .print_setup:
 	; RCX holds the count (length of number string)
-	mov rdx, rcx            			; RDX = total length (digit count)
+	mov rbx, rcx            			; <--- FIX: Use RBX for loop counter
 	mov rsi, num_buffer     			; RSI = starting address
-	add rsi, rdx            			; Point RSI to the byte AFTER the last digit
+	add rsi, rbx            			; Point RSI to the byte AFTER the last digit
 	dec rsi                 			; Point RSI to the last digit (first to print)
 
 .print_loop:
@@ -231,12 +231,11 @@ print_num:
 	mov rax, SYS_WRITE
 	mov rdi, STDOUT
 	mov rdx, 1              			; Length is 1 byte
-	syscall                 			; Print the single character
+	syscall                 			; <--- This clobbers RCX, but not RBX
 
 	dec rsi                 			; Move to the previous character
-	loop .print_loop        			; Decrement RCX and loop until RCX is 0 (this is an efficient loop instruction)
-
-	; Note: LOOP instruction uses RCX implicitly.
+	dec rbx                 			; <--- FIX: Decrement RBX counter
+	jnz .print_loop         			; <--- FIX: Jump based on RBX
 
 	pop rsi                 			; Restore caller-saved registers
 	pop rdx
@@ -312,8 +311,8 @@ display_stat:
     mov rsi, len_newline
     call print_string
     
-    pop rdi                 ; Restore original label address
-    pop rsi                 ; Restore original label length
+    pop rdi                 ; Restore original label address (from push rdi)
+    pop rsi                 ; Restore original label length (from push rsi)
     mov rsp, rbp
     pop rbp
     ret
@@ -417,6 +416,10 @@ display_art:
 display_status:
     push rbp
     mov rbp, rsp
+    push rax ; Save registers
+    push rdx
+    push rdi
+    push rsi
 
     ; 1. Clear Screen (Demoscene Effect)
     mov rdi, ANSI_CLEAR_SCREEN
@@ -455,6 +458,10 @@ display_status:
     mov edx, [pet_strength]
     call display_stat
     
+    pop rsi ; Restore registers
+    pop rdi
+    pop rdx
+    pop rax
     mov rsp, rbp
     pop rbp
     ret
@@ -605,6 +612,8 @@ handle_input:
 update_state:
     push rbp
     mov rbp, rsp
+    push rax
+    push rsi
     
     ; --- AGE INCREMENT ---
     inc dword [pet_age]
@@ -635,6 +644,8 @@ update_state:
     cmovl eax, esi          ; If less than 0, set EAX=0
     mov [pet_health], eax
     
+    pop rsi
+    pop rax
     mov rsp, rbp
     pop rbp
     ret
@@ -650,6 +661,7 @@ update_state:
 generate_random_number:
     push rbp
     mov rbp, rsp
+    push rbx
     push rdx
     push rdi
     
@@ -678,6 +690,7 @@ generate_random_number:
     
     pop rdi
     pop rdx
+    pop rbx
     mov rsp, rbp
     pop rbp
     ret
@@ -694,6 +707,7 @@ check_random_event:
     mov rbp, rsp
     push rdi
     push rsi
+    push rax
     
     call generate_random_number ; EAX = random number (0-99)
     
@@ -706,6 +720,7 @@ check_random_event:
     call print_string           ; Notify the user
     
 .no_event:
+    pop rax
     pop rsi
     pop rdi
     mov rsp, rbp
