@@ -14,35 +14,35 @@
 ;
 ;section .bss
 ;	;Reserve space for variables
-;	input_buffer resb 256               		;256 byte buffer
-;	user_count resq 1                   		;64-bit counter
-;	temp_array resd 100                 		;Array of 100 32-bit integers
-;	file_handle resq 1				;File descriptor storage
+;	input_buffer resb 256                       ;256 byte buffer
+;	user_count resq 1                           ;64-bit counter
+;	temp_array resd 100                         ;Array of 100 32-bit integers
+;	file_handle resq 1				            ;File descriptor storage
 ;
 ;section .text
 ;
 ;Contains executable machine instructions with modern security features
-;Read Only 				Prevents code modification attacks
-;Execute Permission			CPU can fetch instructions from this region
-;Shared					Multiple instances of the same program can share this segment
-;Position Independent Code (PIC)	Supports ASLR security
+;Read Only 				                        Prevents code modification attacks
+;Execute Permission			                    CPU can fetch instructions from this region
+;Shared					                        Multiple instances of the same program can share this segment
+;Position Independent Code (PIC)	            Supports ASLR security
 ;
-;	global _start                       		;Entry point for Linux
-;	;global main					;Alternative entry for C runtime
+;	global _start                               ;Entry point for Linux
+;	;global main					            ;Alternative entry for C runtime
 ;
 ;_start:
 ;	;Program instructions go here
 ;	;Modern 64-bit system call example
-;	mov rax, 1					;sys_write (64-bit)
-;	mov rdi, 1					;stdout
-;	mov rsi, message				;message pointer
-;	mov rdx, msg_len				;message length
-;	syscall						;64-bit system call interface
+;	mov rax, 1					                ;sys_write (64-bit)
+;	mov rdi, 1					                ;stdout
+;	mov rsi, message				            ;message pointer
+;	mov rdx, msg_len				            ;message length
+;	syscall						                ;64-bit system call interface
 ;
 ;	;Must end with a system exit call
 ;	;Clean exit
-;	mov rax, 60					;sys_exit (64-bit)
-;	mov rdi, 0					;exit status
+;	mov rax, 60					                ;sys_exit (64-bit)
+;	mov rdi, 0					                ;exit status
 ;	syscall
 ;
 ;
@@ -70,33 +70,33 @@
 ;Modern assembly instructions follow a consistent format:
 ; [label:] mnemonic [operand1], [operand2]      ;[comment]
 ;Types of operands:
-;	Register: rax, ebx, cl          (processor registers)
-;	Immediate: 42, 0xFF, 'A'        (constant values)
-;	Memory: [rbp-8], [buffer+rsi]   (memory addresses)
-;	Label: loop_start, exit         (code addresses)
+;	Register: rax, ebx, cl                      (processor registers)
+;	Immediate: 42, 0xFF, 'A'                    (constant values)
+;	Memory: [rbp-8], [buffer+rsi]               (memory addresses)
+;	Label: loop_start, exit                     (code addresses)
 ;-----------------------------------------------------------------
 ;Common instruction examples
 ;-----------------------------------------------------------------
 ;Data movement
-;	mov rax, 100					;Load immediate value
-;	mov rbx, rax            			;Register to register
-;	mov [buffer], al        			;Register to memory
-;	mov rsi, [data_ptr]     			;Memory to register
+;	mov rax, 100					            ;Load immediate value
+;	mov rbx, rax            			        ;Register to register
+;	mov [buffer], al        			        ;Register to memory
+;	mov rsi, [data_ptr]     			        ;Memory to register
 ;Arithmetic operations
-;	add rax, rbx            			;Add registers
-;	sub rax, 10             			;Subtract immediate
-;	imul rax, rcx           			;Signed multiplication
-;	idiv rbx                			;Signed division (result in rax, remainder in rdx)
+;	add rax, rbx            			        ;Add registers
+;	sub rax, 10             			        ;Subtract immediate
+;	imul rax, rcx           			        ;Signed multiplication
+;	idiv rbx                			        ;Signed division (result in rax, remainder in rdx)
 ;Logical operations
-;	and rax, 0xFF           			;Bitwise AND
-;	or rax, rbx             			;Bitwise OR
-;	xor rax, rax            			;Clear register (common idiom)
-;	not rax                 			;Bitwise NOT
+;	and rax, 0xFF           			        ;Bitwise AND
+;	or rax, rbx             			        ;Bitwise OR
+;	xor rax, rax            			        ;Clear register (common idiom)
+;	not rax                 			        ;Bitwise NOT
 ;Comparison and jumps
-;	cmp rax, rbx            			;Compare values
-;	je equal_label          			;Jump if equal
-;	jne not_equal_label     			;Jump if not equal
-;	jmp label	       				;Unconditional jump
+;	cmp rax, rbx            			        ;Compare values
+;	je equal_label          			        ;Jump if equal
+;	jne not_equal_label     			        ;Jump if not equal
+;	jmp label	       				            ;Unconditional jump
 ;-----------------------------------------------------------------
 ;	General purpose registers
 ;-----------------------------------------------------------------
@@ -118,13 +118,13 @@
 ;Run the program
 ;	./program
 ;-----------------------------------------------------------------
-;Use meaningful labels			calculate_average instead of loop1
-;Document register usage		comment which registers hold what data
-;Follow calling conventions		Preserve registers as required by ABI
-;Handle errors gracefully		check return values, validate inputs
-;Use constants for system calls		define meaningful names for magic numbers
-;Align data properly			use alignment directives for performance
-;comment complex algorithms		explain the logic, not just the syntax
+;Use meaningful labels			            calculate_average instead of loop1
+;Document register usage		            comment which registers hold what data
+;Follow calling conventions		            Preserve registers as required by ABI
+;Handle errors gracefully		            check return values, validate inputs
+;Use constants for system calls		        define meaningful names for magic numbers
+;Align data properly			            use alignment directives for performance
+;comment complex algorithms		            explain the logic, not just the syntax
 ;-----------------------------------------------------------------
 ;Compile with debug symbols
 ;	nasm -f elf64 -g -F dwarf program.asm -o program.o
@@ -133,20 +133,20 @@
 ;	gdb ./program
 ;-----------------------------------------------------------------
 ;Useful gdb commands:
-;	layout asm			Show assembly view
-;	layout regs			Show registers
-;	stepi				Step one instruction
-;	info registers			Display all registers
-;	x/10x $rsp			Examine stack memory
+;	layout asm			                    Show assembly view
+;	layout regs			                    Show registers
+;	stepi				                    Step one instruction
+;	info registers			                Display all registers
+;	x/10x $rsp			                    Examine stack memory
 ;-----------------------------------------------------------------
 ;Typical Virtual Address Layout
 ;
-;  Address Range			Purpose			Permissions
+;  Address Range			      Purpose			Permissions
 ;
-;0x00000000 - 0x00400000		Null Guard		No Access
+;0x00000000 - 0x00400000		Null Guard		    No Access
 ;0x00400000 - 0x00600000		Text Segment		Read/Execute
 ;0x00600000 - 0x00800000		Data Segment		Read/Write
-;0x00800000 - 0x01000000		BSS Segment		Read/Write
-;0x01000000 - Growing Up		Heap			Read/Write
-;Growing Dn - 0x7FFE0000		Stack			Read/Write
+;0x00800000 - 0x01000000		BSS Segment		    Read/Write
+;0x01000000 - Growing Up		Heap			    Read/Write
+;Growing Dn - 0x7FFE0000		Stack			    Read/Write
 ;0x7FFE0000 - 0x80000000		Kernel Space		Kernel Only
