@@ -380,14 +380,14 @@ display_art:
     
     ; --- PIXEL ON (1) ---
     mov rdi, ANSI_PIXEL_ON
-    mov rdx, LEN_PIXEL_ON
+    mov rsi, LEN_PIXEL_ON
     call print_string       ; Syscall clobbers RCX, but not RBX or R12
     jmp .next_pixel
 
 .pixel_off:
     ; --- PIXEL OFF (0) ---
     mov rdi, ANSI_PIXEL_OFF
-    mov rdx, LEN_PIXEL_OFF
+    mov rsi, LEN_PIXEL_OFF
     call print_string       ; Syscall clobbers RCX, but not RBX or R12
 
 .next_pixel:
@@ -396,11 +396,11 @@ display_art:
     
     ; --- ROW END ---
     mov rdi, ANSI_RESET     ; Reset color/background after row
-    mov rdx, LEN_RESET
+    mov rsi, LEN_RESET
     call print_string
     
     mov rdi, msg_newline    ; Print newline to start next row
-    mov rdx, len_newline
+    mov rsi, len_newline
     call print_string
     
     inc rsi                 ; Move sprite pointer to the next row (byte)
